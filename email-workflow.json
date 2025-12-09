@@ -1,0 +1,593 @@
+{
+  "name": "Email Auto-Reply System",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "readStatus": "unread",
+          "receivedAfter": "={{ $now.minus(1, 'day').toISO() }}"
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "senderEmail",
+              "name": "senderEmail",
+              "value": "={{ $json.From.match(/<(.+)>/)?.[1] || $json.From }}",
+              "type": "string"
+            },
+            {
+              "id": "senderName",
+              "name": "senderName",
+              "value": "={{ $json.From.match(/^([^<]+)/)?.[1]?.trim() || 'there' }}",
+              "type": "string"
+            },
+            {
+              "id": "subject",
+              "name": "subject",
+              "value": "={{ $json.Subject }}",
+              "type": "string"
+            },
+            {
+              "id": "body",
+              "name": "body",
+              "value": "={{ $json.snippet || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "messageId",
+              "name": "messageId",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "threadId",
+              "name": "threadId",
+              "value": "={{ $json.threadId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-content",
+      "name": "Extract Email Content",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "messages": {
+          "values": [
+            {
+              "content": "=Classify this email into exactly ONE category based on its content:\n\nCategories:\n- PRICING: Questions about cost, pricing, fees, quotes, rates, price\n- PARTNERSHIP: Inquiries about collaboration, partnership, joint ventures, working together\n- SUPPORT: Help requests, issues, problems, technical support, errors, bugs\n- GENERAL: Everything else that doesn't fit above categories\n\nEmail Subject: {{ $json.subject }}\nEmail Body: {{ $json.body }}\n\nRespond with ONLY the category name in uppercase (PRICING, PARTNERSHIP, SUPPORT, or GENERAL). Nothing else."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "ai-classification",
+      "name": "AI Classification",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [440, 0],
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "category",
+              "name": "category",
+              "value": "={{ $json.message.content.trim().toUpperCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "senderEmail",
+              "name": "senderEmail",
+              "value": "={{ $('Extract Email Content').item.json.senderEmail }}",
+              "type": "string"
+            },
+            {
+              "id": "senderName",
+              "name": "senderName",
+              "value": "={{ $('Extract Email Content').item.json.senderName }}",
+              "type": "string"
+            },
+            {
+              "id": "subject",
+              "name": "subject",
+              "value": "={{ $('Extract Email Content').item.json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "messageId",
+              "name": "messageId",
+              "value": "={{ $('Extract Email Content').item.json.messageId }}",
+              "type": "string"
+            },
+            {
+              "id": "threadId",
+              "name": "threadId",
+              "value": "={{ $('Extract Email Content').item.json.threadId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-category",
+      "name": "Set Category",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "PRICING",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pricing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "PARTNERSHIP",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Partnership"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.category }}",
+                    "rightValue": "SUPPORT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Support"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "category-switch",
+      "name": "Category Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "replySubject",
+              "name": "replySubject",
+              "value": "=Re: {{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "replyBody",
+              "name": "replyBody",
+              "value": "=Dear {{ $json.senderName }},\n\nThank you for your interest in our services.\n\nOur pricing structure is flexible and tailored to meet your specific needs. The cost varies depending on:\n- Scale of implementation\n- Features required\n- Support level\n- Contract duration\n\nI'd be happy to schedule a brief call to understand your requirements and provide a customized quote.\n\nWould you be available for a 15-minute discussion this week?\n\nBest regards,\nSales Team",
+              "type": "string"
+            },
+            {
+              "id": "senderEmail",
+              "name": "senderEmail",
+              "value": "={{ $json.senderEmail }}",
+              "type": "string"
+            },
+            {
+              "id": "messageId",
+              "name": "messageId",
+              "value": "={{ $json.messageId }}",
+              "type": "string"
+            },
+            {
+              "id": "threadId",
+              "name": "threadId",
+              "value": "={{ $json.threadId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "pricing-template",
+      "name": "Pricing Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, -200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "replySubject",
+              "name": "replySubject",
+              "value": "=Re: {{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "replyBody",
+              "name": "replyBody",
+              "value": "=Dear {{ $json.senderName }},\n\nThank you for reaching out about potential collaboration opportunities.\n\nWe're always interested in exploring strategic partnerships that create mutual value. Our partnerships team carefully reviews each inquiry to ensure alignment with our mission and capabilities.\n\nTo help us evaluate this opportunity, could you please share:\n- Your company background\n- Proposed partnership model\n- Expected outcomes\n- Timeline considerations\n\nWe typically respond to partnership inquiries within 2-3 business days.\n\nLooking forward to learning more about your proposal.\n\nBest regards,\nPartnerships Team",
+              "type": "string"
+            },
+            {
+              "id": "senderEmail",
+              "name": "senderEmail",
+              "value": "={{ $json.senderEmail }}",
+              "type": "string"
+            },
+            {
+              "id": "messageId",
+              "name": "messageId",
+              "value": "={{ $json.messageId }}",
+              "type": "string"
+            },
+            {
+              "id": "threadId",
+              "name": "threadId",
+              "value": "={{ $json.threadId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "partnership-template",
+      "name": "Partnership Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "replySubject",
+              "name": "replySubject",
+              "value": "=Re: {{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "replyBody",
+              "name": "replyBody",
+              "value": "=Dear {{ $json.senderName }},\n\nThank you for contacting our support team.\n\nWe've received your inquiry and want to help resolve your issue as quickly as possible.\n\nHere are some resources that might help immediately:\n- Help Center: [URL]\n- Documentation: [URL]\n- Video Tutorials: [URL]\n\nIf you need direct assistance, please reply to this email with:\n1. Detailed description of the issue\n2. Screenshots (if applicable)\n3. Your account information\n4. Any error messages you received\n\nOur support team typically responds within 4 hours during business hours.\n\nBest regards,\nSupport Team",
+              "type": "string"
+            },
+            {
+              "id": "senderEmail",
+              "name": "senderEmail",
+              "value": "={{ $json.senderEmail }}",
+              "type": "string"
+            },
+            {
+              "id": "messageId",
+              "name": "messageId",
+              "value": "={{ $json.messageId }}",
+              "type": "string"
+            },
+            {
+              "id": "threadId",
+              "name": "threadId",
+              "value": "={{ $json.threadId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "support-template",
+      "name": "Support Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "replySubject",
+              "name": "replySubject",
+              "value": "=Re: {{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "replyBody",
+              "name": "replyBody",
+              "value": "=Dear {{ $json.senderName }},\n\nThank you for reaching out to us.\n\nWe've received your message and our team will review it carefully. A member of our team will respond within 24-48 hours.\n\nIn the meantime, you might find these resources helpful:\n- Website: [URL]\n- FAQ: [URL]\n\nIf your matter is time-sensitive, please reply with \"URGENT\" in the subject line and we'll prioritize your request.\n\nWe appreciate your patience and look forward to assisting you.\n\nBest regards,\nTeam",
+              "type": "string"
+            },
+            {
+              "id": "senderEmail",
+              "name": "senderEmail",
+              "value": "={{ $json.senderEmail }}",
+              "type": "string"
+            },
+            {
+              "id": "messageId",
+              "name": "messageId",
+              "value": "={{ $json.messageId }}",
+              "type": "string"
+            },
+            {
+              "id": "threadId",
+              "name": "threadId",
+              "value": "={{ $json.threadId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "general-template",
+      "name": "General Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, 400]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.senderEmail }}",
+        "subject": "={{ $json.replySubject }}",
+        "message": "={{ $json.replyBody }}",
+        "options": {
+          "threadId": "={{ $json.threadId }}"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1320, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Extract Email Content').item.json.messageId }}"
+      },
+      "id": "mark-read",
+      "name": "Mark as Read",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1540, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Email Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Email Content": {
+      "main": [
+        [
+          {
+            "node": "AI Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Classification": {
+      "main": [
+        [
+          {
+            "node": "Set Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Category": {
+      "main": [
+        [
+          {
+            "node": "Category Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Category Switch": {
+      "main": [
+        [
+          {
+            "node": "Pricing Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Partnership Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Support Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "General Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pricing Response": {
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Partnership Response": {
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Support Response": {
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "General Response": {
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reply": {
+      "main": [
+        [
+          {
+            "node": "Mark as Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "pinData": {}
+}
